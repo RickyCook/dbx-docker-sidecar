@@ -14,9 +14,30 @@ so `docker compose up` (or restarting the sidecar) restores the exact same dbx s
 
 ```sh
 cp .env.example .env      # set DBX_PASSWORD (required)
-docker compose up -d      # dbx + sidecar
+docker compose up -d      # dbx + sidecar (builds the sidecar image locally)
 open http://localhost:4224
 ```
+
+No repo clone? Copy the `dbx` and `sidecar` services out of `compose.yml` into your
+project's compose file, and set `DBX_SIDECAR_IMAGE` (or replace the sidecar's
+`build:` with `image: ghcr.io/rickycook/dbx-docker-sidecar:…`) to skip any local build.
+
+### Demo walkthrough
+
+```sh
+DBX_PASSWORD=… docker compose --profile demo up -d
+```
+
+Adds postgres, mysql, and mariadb with realistic env vars. After a few seconds the dbx UI
+shows three saved connections with the right engine/creds; the demo `down` removes them
+again. Default profile (no `demo`) starts only dbx + sidecar.
+
+### Pinning / upgrading
+
+dbx's HTTP API is **not a stable contract** — pin `DBX_IMAGE` in `.env`
+(default `t8y2/dbx:0.6.9`) and `DBX_SIDECAR_IMAGE` to a semver sidecar image
+(e.g. `ghcr.io/rickycook/dbx-docker-sidecar:v0.1.0`, publishes on release tags).
+Treat sidecar/dbx version bumps as a pair.
 
 ## Slop honesty
 
@@ -108,21 +129,6 @@ a labeled redis with `….db_type=redis`, `….port=6379`, plus any other overri
 The sidecar POSTs the **full connection list** it derives from Docker.
 Connections created by hand in the dbx UI are wiped on the next sync — put them in
 labels instead.
-
-### Demo walkthrough
-
-```sh
-DBX_PASSWORD=… docker compose --profile demo up -d
-```
-
-Adds postgres, mysql, and mariadb with realistic env vars. After a few seconds the dbx UI
-shows three saved connections with the right engine/creds; the demo `down` removes them
-again. Default profile (no `demo`) starts only dbx + sidecar.
-
-### Pinning / upgrading
-
-dbx's HTTP API is **not a stable contract** — pin `DBX_IMAGE` in `.env`
-(default `t8y2/dbx:0.6.9`) and treat sidecar/dbx version bumps as a pair.
 
 ## Troubleshooting
 

@@ -13,11 +13,14 @@ services:
     restart: unless-stopped
 
   sidecar:
+    # Set DBX_SIDECAR_IMAGE to skip the local build and use a released image,
+    # e.g. ghcr.io/rickycook/dbx-docker-sidecar:v0.1.0
     build:
       context: .
       args:
         # GID of the mounted /var/run/docker.sock group (0 on Docker Desktop)
         DOCKER_GID: ${DOCKER_GID:-0}
+    image: ${DBX_SIDECAR_IMAGE:-dbx-docker-sidecar-sidecar}
     restart: unless-stopped
     environment:
       DBX_URL: ${DBX_URL:-http://dbx:4224}
