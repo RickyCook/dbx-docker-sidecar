@@ -1,0 +1,62 @@
+# NOTE: connections created by hand in the dbx UI are wiped on the next
+# sidecar sync — the sidecar POSTs its full desired list, replacing manual
+# edits. Label containers with com.thatpanda.show-in-dbx to persist them.
+services:
+  dbx:
+    image: ${DBX_IMAGE:-t8y2/dbx:0.6.9}
+    ports:
+      - '4224:4224'
+    volumes:
+      - dbx-data:/app/data
+    environment:
+      DBX_PASSWORD: ${DBX_PASSWORD:?DBX_PASSWORD is required}
+    restart: unless-stopped
+
+  sidecar:
+    build:
+      context: .
+      args:
+        # GID of the mounted /var/run/docker.sock group (0 on Docker Desktop)
+        DOCKER_GID: ${DOCKER_GID:-0}
+    restart: unless-stopped
+    environment:
+      DBX_URL: ${DBX_URL:-http://dbx:4224}
+      DBX_PASSWORD: ${DBX_PASSWORD:?DBX_PASSWORD is required}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - dbx
+
+  demo-postgres:
+    profiles: [demo]
+    image: postgres:17
+    labels:
+      com.thatpanda.show-in-dbx: 'true'
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demopass
+      POSTGRES_DB: orders
+    restart: unless-stopped
+
+  demo-mysql:
+    profiles: [demo]
+    image: mysql:9
+    labels:
+      com.thatpanda.show-in-dbx: 'true'
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: shop
+    restart: unless-stopped
+
+  demo-mariadb:
+    profiles: [demo]
+    image: mariadb:11
+    labels:
+      com.thatpanda.show-in-dbx: 'true'
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpass
+      MARIADB_DATABASE: shop
+    restart: unless-stopped
+
+volumes:
+  dbx-data: {}

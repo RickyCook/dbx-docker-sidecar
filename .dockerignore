@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.github
+spec.md
+tickets
+*.test.ts
+src/integration
+vitest.config.ts
+compose.yml
+Dockerfile
+.dockerignore

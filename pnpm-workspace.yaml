@@ -1,0 +1,6 @@
+allowBuilds:
+  esbuild: false
+  ssh2: false
+  cpu-features: false
+  protobufjs: false
+  msw: false
