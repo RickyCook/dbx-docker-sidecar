@@ -137,7 +137,7 @@ dbx's HTTP API is **not a stable contract** — pin `DBX_IMAGE` in `.env`
 
 ## Verification of this repo
 
-`pnpm test`, `pnpm typecheck`, `pnpm lint`. Full spec lives in
-[`spec.md`](spec.md); per-ticket build notes in [`tickets/`](tickets/).
+`pnpm test`, `pnpm typecheck`, `pnpm lint`. Full spec and per-ticket build history live in
+GitHub Issues (#1 spec, #2–#8 tickets).
 The sidecar image is a bundle-only multi-stage build: one 3.3 MB `sidecar.cjs` on top of
 the node alpine base (whole image ≈ 250 MB, the weight being the node runtime itself).
