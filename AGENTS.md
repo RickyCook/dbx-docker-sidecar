@@ -1,5 +1,11 @@
 # dbx-docker-sidecar
 
+## README conventions
+
+The first two `##` headers in `README.md` must be, in order: `## Slop honesty`
+and `## Quickstart` (demo walkthrough and pinning sit under it as `###`
+subsections). Keep that opening pair and relative order when restructuring.
+
 ## Agent skills
 
 ### Issue tracker

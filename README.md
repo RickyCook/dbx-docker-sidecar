@@ -10,6 +10,12 @@ Remove the container and the sidecar cleans up both the connection and any netwo
 no longer needs. The sidecar is stateless — on boot it reconciles from live Docker state,
 so `docker compose up` (or restarting the sidecar) restores the exact same dbx state.
 
+## Slop honesty
+
+This is _entirely_ AI slop code that was built in the background while I did other
+things. Don't rely on it, but hey it exists where otherwise it wouldn't and it's damn
+helpful for local dev work across multiple projects.
+
 ## Quickstart
 
 ```sh
@@ -39,11 +45,9 @@ dbx's HTTP API is **not a stable contract** — pin `DBX_IMAGE` in `.env`
 (e.g. `ghcr.io/rickycook/dbx-docker-sidecar:v0.1.0`, publishes on release tags).
 Treat sidecar/dbx version bumps as a pair.
 
-## Slop honesty
-
-This is _entirely_ AI slop code that was built in the background while I did other
-things. Don't rely on it, but hey it exists where otherwise it wouldn't and it's damn
-helpful for local dev work across multiple projects.
+Released images are immutable-ish: publish derives from a semver tag, tag rules
+protect `v*` from force-pushes (Settings → Tags), and the release workflow
+refuses to republish a `ghcr.io` tag that already exists.
 
 ## How it fits together
 
