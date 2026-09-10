@@ -35,6 +35,7 @@ const CONNECTION = {
   password: 'hunter2',
   database: null,
   save_password: true,
+  note: '',
 };
 
 const server = setupServer();

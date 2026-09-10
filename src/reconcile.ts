@@ -2,7 +2,7 @@ import type { DbxClient } from './dbx.js';
 import type { DockerAdapter } from './docker-adapter.js';
 import type { DockerEvent, EventSource } from './events.js';
 import { childLogger } from './log.js';
-import { computeDesired, diffState } from './reconcile-core.js';
+import { buildSavePayload, computeDesired, diffState } from './reconcile-core.js';
 import { sleep } from './sleep.js';
 
 const log = childLogger('reconcile');
@@ -72,8 +72,8 @@ export class Reconciler {
     });
 
     if (diff.connectionChanges.length > 0) {
-      // Dbx save semantics are full-list replace; the desired list IS the
-      // payload, so save it when the diff is non-empty.
+      // Dbx save semantics are full-list replace; the payload must carry
+      // desired connections plus conserved unmanaged ones verbatim.
       for (const change of diff.connectionChanges) {
         if (change.action === 'remove') {
           log.info({ id: change.id }, 'connection removed');
@@ -81,7 +81,16 @@ export class Reconciler {
           log.info({ action: change.action, name: change.connection.name }, 'connection change');
         }
       }
-      await this.#deps.dbx.saveConnections(desired.connections);
+      await this.#deps.dbx.saveConnections(
+        buildSavePayload(desired, diff.conflicts, { connections: current }),
+      );
+    }
+
+    for (const conflict of diff.conflicts) {
+      log.error(
+        { id: conflict.id, name: conflict.name },
+        'unmanaged dbx connection shares a sidecar-derived id; leaving it untouched',
+      );
     }
 
     for (const change of diff.networkChanges) {

@@ -14,6 +14,11 @@ export const DbxConnectionSchema = z.looseObject({
   password: z.string(),
   database: z.nullable(z.string()),
   save_password: z.boolean().default(true),
+  // First-class user note in dbx's ConnectionConfig. The sidecar writes its
+  // ownership marker here (see reconcile-core.ts); exact-match is the only
+  // form that survives a read-modify-write cycle — dbx's struct is closed,
+  // so fields unknown to dbx are silently dropped on save.
+  note: z.string().default(''),
 });
 
 export type DbxConnection = z.output<typeof DbxConnectionSchema>;
