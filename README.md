@@ -18,6 +18,12 @@ docker compose up -d      # dbx + sidecar
 open http://localhost:4224
 ```
 
+## Slop honesty
+
+This is _entirely_ AI slop code that was built in the background while I did other
+things. Don't rely on it, but hey it exists where otherwise it wouldn't and it's damn
+helpful for local dev work across multiple projects.
+
 ## How it fits together
 
 ```
