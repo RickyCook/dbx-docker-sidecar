@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
+import type { DbxConnection } from './dbx-schema.js';
 import {
   DEFAULT_CONFIG,
   detectDbType,
@@ -9,7 +10,15 @@ import {
   mergedConfig,
   parseLabels,
 } from './detection.js';
-import { computeDesired, connectionId, type DesiredState, diffState } from './reconcile-core.js';
+import {
+  buildSavePayload,
+  computeDesired,
+  connectionId,
+  type DesiredState,
+  diffState,
+  isManaged,
+  MANAGED_NOTE,
+} from './reconcile-core.js';
 import type { ContainerSnapshot } from './snapshot.js';
 
 const PREFIX = 'com.thatpanda.show-in-dbx';
@@ -294,6 +303,7 @@ describe('computeDesired', () => {
         password: 'p',
         database: 'postgres',
         save_password: true,
+        note: MANAGED_NOTE,
       },
     ]);
     expect(desired.skipped).toStrictEqual([]);
@@ -492,7 +502,7 @@ describe('diffState', () => {
         dbNetworks: desired().attachments,
         sidecarNetworks: SIDECAR,
       }),
-    ).toStrictEqual({ connectionChanges: [], networkChanges: [] });
+    ).toStrictEqual({ connectionChanges: [], conflicts: [], networkChanges: [] });
   });
 
   it('recreate with a new ip → update-in-place (same id, new host)', () => {
@@ -573,3 +583,171 @@ describe('diffState', () => {
     expect(state.connectionChanges).toStrictEqual([]);
   });
 });
+
+describe('unmanaged connections', () => {
+  const desired = (): DesiredState =>
+    computeDesired([snapshot({ name: 'pg-a', env: { POSTGRES_PASSWORD: 'p' } })], {
+      labelPrefix: PREFIX,
+      sidecarNetworks: SIDECAR,
+    });
+  const derivedId = connectionId('pg-a');
+  const manual = (): DbxConnection => ({
+    id: derivedId,
+    name: 'pg-a',
+    db_type: 'postgres',
+    host: 'pg-a.internal',
+    port: 5432,
+    username: 'ops-user',
+    password: 'ops-pw',
+    database: 'ops-db',
+    save_password: true,
+    note: 'hand-configured by the platform team',
+  });
+
+  it('a destroyed managed container is removed; a manual connection never is', () => {
+    const state = diffState(desired(), {
+      connections: [
+        ...desired().connections,
+        { ...desired().connections[0]!, id: connectionId('gone'), name: 'gone' },
+        { ...manual(), id: connectionId('manual') },
+      ],
+      dbNetworks: [],
+      sidecarNetworks: SIDECAR,
+    });
+    expect(state.conflicts).toStrictEqual([]);
+    expect(state.connectionChanges.filter((change) => change.action === 'remove')).toStrictEqual([
+      { action: 'remove', id: connectionId('gone') },
+    ]);
+    // Removals name only destroyed managed containers, never the manual one.
+    expect(state.connectionChanges.some((change) => change.action === 'remove')).toBe(true);
+    expect(
+      state.connectionChanges.some(
+        (change) => change.action === 'remove' && change.id === connectionId('manual'),
+      ),
+    ).toBe(false);
+    expect(
+      state.connectionChanges.some(
+        (change) => change.action === 'remove' && change.id === derivedId,
+      ),
+    ).toBe(false);
+  });
+
+  it('a manual connection with a colliding id is a conflict, not an override', () => {
+    const state = diffState(desired(), {
+      connections: [manual()],
+      dbNetworks: [],
+      sidecarNetworks: SIDECAR,
+    });
+    expect(state.connectionChanges).toStrictEqual([]);
+    expect(state.conflicts).toStrictEqual([{ id: derivedId, name: 'pg-a' }]);
+  });
+
+  it('an exact-field manual connection is adopted with only the marker added', () => {
+    // Byte-for-byte match with the derived connection in every compared
+    // field; the marker is the only thing adoption is allowed to change.
+    const adopted = { ...desired().connections[0]!, note: '' };
+    const state = diffState(desired(), {
+      connections: [adopted],
+      dbNetworks: [],
+      sidecarNetworks: SIDECAR,
+    });
+    expect(state.conflicts).toStrictEqual([]);
+    const change = state.connectionChanges[0];
+    expect(change).toMatchObject({ action: 'update' });
+    if (change?.action === 'update') {
+      expect(change.connection).toStrictEqual({ ...adopted, note: MANAGED_NOTE });
+    }
+  });
+
+  it('an update keeps dbx-side extras the sidecar does not model', () => {
+    const stale = {
+      ...desired().connections[0]!,
+      host: '10.0.0.old',
+      color: 'teal',
+      ssl: true,
+    };
+    const state = diffState(desired(), {
+      connections: [stale],
+      dbNetworks: [],
+      sidecarNetworks: SIDECAR,
+    });
+    const change = state.connectionChanges[0];
+    expect(change).toMatchObject({ action: 'update', connection: { host: '10.0.0.9' } });
+    expect(state.conflicts).toStrictEqual([]);
+  });
+});
+
+describe('buildSavePayload', () => {
+  const desired = (): DesiredState =>
+    computeDesired([snapshot({ name: 'pg-a', env: { POSTGRES_PASSWORD: 'p' } })], {
+      labelPrefix: PREFIX,
+      sidecarNetworks: SIDECAR,
+    });
+  const manual = (): DbxConnection => ({
+    id: 'dbx-ui-generated-id-01',
+    name: 'cloud-db',
+    db_type: 'postgres',
+    host: 'db.example.com',
+    port: 5432,
+    username: 'ops',
+    password: 'pw',
+    database: null,
+    save_password: true,
+    note: 'hand-added',
+    transport_layers: ['direct'],
+  });
+
+  it('carries unmanaged connections verbatim including dbx-side fields', () => {
+    const payload = buildSavePayload(desired(), [], { connections: [manual()] });
+    expect(payload).toHaveLength(2);
+    expect(payload[1]).toStrictEqual(manual());
+  });
+
+  it('merges the current managed copy so dbx-side fields survive unchanged saves', () => {
+    const existing = { ...desired().connections[0]!, color: 'teal' };
+    const payload = buildSavePayload(desired(), [], { connections: [existing] });
+    expect(payload).toHaveLength(1);
+    expect(payload[0]).toStrictEqual({ ...existing, color: 'teal' });
+  });
+
+  it('excludes conflicted ids on both sides and keeps the manual entry', () => {
+    const manualColliding = {
+      ...manual(),
+      id: connectionId('pg-a'),
+    };
+    const conflicts = [{ id: manualColliding.id, name: manualColliding.name }];
+    const payload = buildSavePayload(desired(), conflicts, {
+      connections: [manualColliding],
+    });
+    expect(payload).toStrictEqual([manualColliding]);
+  });
+
+  it('dropped managed ids (removed containers) never reach the payload', () => {
+    const gone = { ...desired().connections[0]!, id: connectionId('gone'), name: 'gone' };
+    const payload = buildSavePayload(desired(), [], { connections: [gone] });
+    expect(payload.map((connection) => connection.id)).toStrictEqual([connectionId('pg-a')]);
+  });
+});
+
+describe('isManaged', () => {
+  it('matches the marker exactly and rejects near-misses', () => {
+    expect(isManaged({ ...defaultConnection(), note: MANAGED_NOTE })).toBe(true);
+    expect(isManaged({ ...defaultConnection(), note: `x ${MANAGED_NOTE}` })).toBe(false);
+    expect(isManaged({ ...defaultConnection(), note: '' })).toBe(false);
+  });
+});
+
+function defaultConnection(): DbxConnection {
+  return {
+    id: 'some-id',
+    name: 'n',
+    db_type: 'postgres',
+    host: 'h',
+    port: 5432,
+    username: 'u',
+    password: 'p',
+    database: null,
+    save_password: true,
+    note: '',
+  };
+}

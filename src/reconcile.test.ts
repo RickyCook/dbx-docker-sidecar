@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 
 import { DbxClient, type DbxHttpAdapter, DbxUnreachableError } from './dbx.js';
@@ -226,6 +227,61 @@ describe('reconcile loop', () => {
     expect(h.dbx.connections).toHaveLength(1);
   });
 });
+
+describe('unmanaged connections', () => {
+  const manualConnection = (): DbxConnection => ({
+    id: 'dbx-ui-cloud-0000001',
+    name: 'cloud-db',
+    db_type: 'postgres',
+    host: 'db.example.com',
+    port: 5432,
+    username: 'ops',
+    password: 'pw',
+    database: null,
+    save_password: true,
+    note: 'hand-added in the dbx UI',
+  });
+
+  it('a manual connection survives every sync verbatim', async () => {
+    const h = harness();
+    h.dbx.connections = [manualConnection()];
+    h.docker.containers = [snapshot()];
+    await h.reconciler.reconcile();
+    expect(h.dbx.saves).toBe(1);
+    expect(h.dbx.connections).toHaveLength(2);
+    expect(h.dbx.connections[0]).toMatchObject({ name: 'order-db-1' });
+    expect(h.dbx.connections[1]).toStrictEqual(manualConnection());
+  });
+
+  it('destroying the managed container removes only its connection', async () => {
+    const h = harness();
+    h.dbx.connections = [manualConnection()];
+    h.docker.containers = [snapshot({ name: 'cloud-db' })];
+    await h.reconciler.reconcile();
+    h.docker.containers = [];
+    await h.reconciler.reconcile();
+    expect(h.dbx.saves).toBe(2);
+    expect(h.dbx.connections).toStrictEqual([manualConnection()]);
+  });
+
+  it('a colliding unmanaged id conflicts: nothing is saved or overridden', async () => {
+    const h = harness();
+    const manual = {
+      ...manualConnection(),
+      id: connectionIdFor('order-db-1'),
+      note: 'mine, not the sidecars',
+    };
+    h.dbx.connections = [manual];
+    h.docker.containers = [snapshot()];
+    await h.reconciler.reconcile();
+    expect(h.dbx.saves).toBe(0);
+    expect(h.dbx.connections).toStrictEqual([manual]);
+  });
+});
+
+function connectionIdFor(name: string): string {
+  return createHash('sha1').update(name).digest('hex').slice(0, 16);
+}
 
 describe('event stream wiring', () => {
   it('events debounce into one reconcile and stop() closes cleanly', async () => {

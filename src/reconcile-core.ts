@@ -13,6 +13,16 @@ type ConnectionBuild =
   | { readonly ok: true; readonly connection: DbxConnection }
   | { readonly ok: false; readonly reason: string };
 
+// Ownership marker stored in the connection's note field (a first-class
+// dbx field; anything unknown to dbx is silently dropped on save — see
+// docs/agents/dbx.md). Exact match, never substring: a note that merely
+// mentions the marker is not ours.
+export const MANAGED_NOTE = 'managed by dbx-docker-sidecar — do not remove';
+
+export function isManaged(connection: DbxConnection): boolean {
+  return connection.note === MANAGED_NOTE;
+}
+
 export function connectionId(name: string): string {
   return createHash('sha1').update(name).digest('hex').slice(0, 16);
 }
@@ -67,6 +77,7 @@ function buildConnection(
     password: config.password,
     database: config.database,
     save_password: true,
+    note: MANAGED_NOTE,
   };
   return { ok: true, connection };
 }
@@ -118,6 +129,13 @@ export type ConnectionChange =
   // snapshot, so its id is present-in-dbx but absent-in-desired.
   | { readonly action: 'remove'; readonly id: string };
 
+// A dbx connection whose id collides with a derived one but which carries no
+// marker: someone else's config, never to be overridden or removed.
+export interface ConnectionConflict {
+  readonly id: string;
+  readonly name: string;
+}
+
 export type NetworkChange =
   | { readonly action: 'connect'; readonly network: string }
   | { readonly action: 'disconnect'; readonly network: string };
@@ -139,9 +157,12 @@ function sameConnection(a: DbxConnection, b: DbxConnection): boolean {
 
 export interface DesiredStateDiff {
   readonly connectionChanges: readonly ConnectionChange[];
+  readonly conflicts: readonly ConnectionConflict[];
   readonly networkChanges: readonly NetworkChange[];
 }
 
+// Classification per desired connection id (add / update / adopt / conflict)
+// and per current connection (remove when managed + absent-from-desired).
 export function diffState(
   desired: DesiredState,
   current: {
@@ -154,16 +175,26 @@ export function diffState(
   const currentById = new Map(current.connections.map((connection) => [connection.id, connection]));
 
   const connectionChanges: ConnectionChange[] = [];
+  const conflicts: ConnectionConflict[] = [];
   for (const [id, connection] of desiredById) {
     const existing = currentById.get(id);
     if (existing === undefined) {
       connectionChanges.push({ action: 'add', connection });
+    } else if (!isManaged(existing)) {
+      // Not ours. Claimed only when the fields already agree byte for byte —
+      // the marker is the only thing the adopt-below save adds. Anything
+      // else is a conflict: someone else's config stays untouched.
+      if (!sameConnection(existing, connection)) {
+        conflicts.push({ id, name: existing.name });
+      } else {
+        connectionChanges.push({ action: 'update', connection: { ...existing, ...connection } });
+      }
     } else if (!sameConnection(existing, connection)) {
-      connectionChanges.push({ action: 'update', connection });
+      connectionChanges.push({ action: 'update', connection: { ...existing, ...connection } });
     }
   }
-  for (const [id] of currentById) {
-    if (!desiredById.has(id)) {
+  for (const [id, existing] of currentById) {
+    if (!desiredById.has(id) && isManaged(existing)) {
       connectionChanges.push({ action: 'remove', id });
     }
   }
@@ -180,5 +211,33 @@ export function diffState(
       networkChanges.push({ action: 'disconnect', network });
     }
   }
-  return { connectionChanges, networkChanges };
+  return { connectionChanges, conflicts, networkChanges };
+}
+
+// The save payload replaces dbx's entire list, so it must carry everything:
+// desired connections (merged over their current managed copy so dbx-side
+// fields like color or ssl survive a save), plus every unmanaged connection
+// verbatim. Conflicted ids are excluded wholesale — the manual entry wins
+// and the derived connection is not written.
+export function buildSavePayload(
+  desired: DesiredState,
+  conflicts: readonly ConnectionConflict[],
+  current: { readonly connections: readonly DbxConnection[] },
+): DbxConnection[] {
+  const conflictedIds = new Set(conflicts.map((conflict) => conflict.id));
+  const currentById = new Map(current.connections.map((connection) => [connection.id, connection]));
+  const payload: DbxConnection[] = [];
+  for (const connection of desired.connections) {
+    if (conflictedIds.has(connection.id)) {
+      continue;
+    }
+    const existing = currentById.get(connection.id);
+    payload.push(existing !== undefined ? { ...existing, ...connection } : connection);
+  }
+  for (const connection of currentById.values()) {
+    if (!isManaged(connection)) {
+      payload.push(connection);
+    }
+  }
+  return payload;
 }

@@ -1,6 +1,7 @@
-# NOTE: connections created by hand in the dbx UI are wiped on the next
-# sidecar sync — the sidecar POSTs its full desired list, replacing manual
-# edits. Label containers with com.thatpanda.show-in-dbx to persist them.
+# NOTE: only connections whose note is the sidecar marker ("managed by
+# dbx-docker-sidecar — do not remove") are under sidecar control. Hand-created
+# connections in the dbx UI are conserved across syncs. Label containers with
+# com.thatpanda.show-in-dbx to have the sidecar manage them.
 services:
   dbx:
     image: ${DBX_IMAGE:-t8y2/dbx:0.6.9}

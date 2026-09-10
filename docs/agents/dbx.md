@@ -20,10 +20,15 @@ What we learned wiring this sidecar to dbx's Web API. Domain vocabulary (connect
 
 - `GET /api/connection/list` returns a **bare array** of ConnectionConfig (some versions may wrap in `{configs: [...]}` — accept both, see `DbxListResponseSchema`).
 - `POST /api/connection/save` takes `{ "configs": [...] }` and replaces the entire list (`DbxSaveBodySchema`). There is no per-connection upsert endpoint — a full-list diff-and-save is the only write path.
-- ConnectionConfig uses **snake_case** (`db_type`, `save_password`) and treats **unknown fields as meaningful** (transport layers, visible databases). Use a loose schema (`z.looseObject`) so a read-modify-write round-trip never strips dbx-side data.
-- `id` is a caller-chosen string; we use 16 hex chars of SHA-1 of the container name (`connectionId` in `src/reconcile-core.ts`) so the same container updates in place instead of duplicating.
+- ConnectionConfig uses **snake_case** (`db_type`, `save_password`) and is a **closed Rust struct with no flatten catch-all**. That means:
+  - fields unknown **to us** but known to dbx (`transport_layers`, `visible_databases`, `color`, ...) survive a read-modify-write because our schema (`z.looseObject`) keeps them and dbx deserializes them back;
+  - fields unknown **to dbx** are *silently dropped* by serde on save — there is no free-form metadata field to hide our own state in.
+  Use the loose schema so a round-trip never strips dbx-side data either way.
+- The one safe place for sidecar state is the first-class `note` field (see below). dbx also manipulates `note` itself: `mongo_fallback_config_matches` clears it before comparing configs (v0.6.9 `crates/dbx-server/src/routes/connection.rs` ~line 203) — recheck that pattern on pin upgrades.
+- `id` is a caller-chosen string; we use 16 hex chars of SHA-1 of the container name (`connectionId` in `src/reconcile-core.ts`) so the same container updates in place instead of duplicating. dbx UI-created connections get dbx-chosen ids, so collisions with our scheme are the adoption/conflict signal.
 - Sending `save_password: false` **drops the stored credential** dbx holds for that connection. We always send `true`; dbx owns echoing that flag back, so the flag is excluded from change-detection (`sameConnection` in `src/reconcile-core.ts`).
 - `database` is nullable; `port` is an integer.
+- **Ownership marker**: the sidecar writes `managed by dbx-docker-sidecar — do not remove` into `note` on every connection it manages ("`MANAGED_NOTE`"). Exact match keys ownership; markerless connections are conserved verbatim in every save payload (`buildSavePayload`). Updates merge over the existing copy (`{...existing, ...desired}`) so dbx-side fields survive.
 
 ## Behaviour under startup
 

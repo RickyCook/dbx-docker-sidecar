@@ -128,11 +128,24 @@ a labeled redis with `….db_type=redis`, `….port=6379`, plus any other overri
   never dropped just because it stopped.
 - Destroyed container: connection removed entirely.
 
-## Sidecar owns the list
+## Managed vs unmanaged connections
 
-The sidecar POSTs the **full connection list** it derives from Docker.
-Connections created by hand in the dbx UI are wiped on the next sync — put them in
-labels instead.
+The sidecar marks every connection it creates with a note: **“managed by
+dbx-docker-sidecar — do not remove”**. That note is the ownership marker — a
+connection is the sidecar's **iff its note matches exactly**.
+
+- **Managed** connections: derived from labeled containers. Updated on any field
+  change, removed when the container is destroyed.
+- **Unmanaged** connections (anything hand-created in the dbx UI, e.g. a cloud
+  database): passed through every save **verbatim** — never edited, never
+  removed.
+- A hand-created connection whose id happens to collide with a sidecar-derived
+  id (same container name, different config) is never overridden; the sidecar
+  logs an error and stays out of its way. Connections left by pre-marker
+  sidecar versions are adopted automatically when their fields already match.
+
+Networks remain full-control: dbx is disconnected from attachments outside the
+desired superset, including manual ones (see Network policy).
 
 ## Troubleshooting
 
@@ -142,7 +155,7 @@ labels instead.
 | Connection host is a dotted id          | Container was stopped; it flips back to an IP when it runs again.     |
 | `dbx container not found; network reconciliation deferred` | dbx is (re)starting / DBX_URL hostname mismatch — reconciles every few seconds until found. |
 | `dbx login lockout, backing off`        | dbx lockout on bad credentials — check `DBX_PASSWORD` matches dbx's; the sidecar backs off instead of hammering. |
-| UI manually added connections vanish    | Expected: sidecar owns the list (see above).                         |
+| Connection removed though hand-added   | Was its note edited (marker no longer exact)? Unmarked connections are never removed. Check sidecar logs for the collision error. |
 | dbx unreachable warnings                 | dbx not up yet or wrong `DBX_URL`; sidecar retries within its budget. |
 
 ## Verification of this repo

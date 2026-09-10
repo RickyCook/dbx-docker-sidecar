@@ -51,8 +51,20 @@ The explicit delta (add/update/remove connections; connect/disconnect networks) 
 
 ### Ownership and networks
 
+**Managed connection**:
+A dbx saved connection whose `note` field is exactly the marker `managed by dbx-docker-sidecar — do not remove`. The sidecar owns these: it creates, updates, and removes them per Docker reality. _Avoid_: owned connection, sidecar-created
+
+**Unmanaged connection (manual connection)**:
+A dbx connection without the exact marker — e.g. hand-created in the dbx UI for a cloud database. Conserved verbatim on every save: never altered, never removed. _Avoid_: foreign connection (it may have been ours pre-marker)
+
+**Ownership marker**:
+The exact note text that keys ownership. Exact match, not substring: a note that merely mentions the marker is not the sidecar's. _Avoid_: tag, label (that word belongs to Docker labels)
+
+**Adoption**:
+Claiming a markerless connection only when its compared fields already match the derived one exactly — the pre-marker backfill path. Any field divergence is a conflict instead: the manual config wins and is never overridden. _Avoid_: takeover
+
 **Owned lists**:
-On every apply the sidecar replaces dbx's entire connection list; connections created in the dbx UI are wiped at the next sync. dbx never holds state the sidecar would preserve.
+On every apply the sidecar replaces the connection list, but unmanaged entries ride in the payload untouched. dbx never holds managed state the sidecar would not preserve. Avoid: full ownership
 
 **Attachment superset**:
 The attachment set that is always a superset of any labeled container's networks plus the sidecar's own networks — so api connectivity survives pruning. _Avoid_: network union
