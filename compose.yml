@@ -62,5 +62,12 @@ services:
       MARIADB_DATABASE: shop
     restart: unless-stopped
 
+  demo-redis:
+    profiles: [demo]
+    image: redis:8
+    labels:
+      com.thatpanda.show-in-dbx: 'true'
+    restart: unless-stopped
+
 volumes:
   dbx-data: {}

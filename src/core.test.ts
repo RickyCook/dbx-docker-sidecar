@@ -99,8 +99,19 @@ describe('detectDbType', () => {
     });
   });
 
+  it('detects redis from REDIS_ env and image name', () => {
+    expect(detectDbType('bogus:latest', { REDIS_PASSWORD: 'x' }, undefined)).toStrictEqual({
+      ok: true,
+      dbType: 'redis',
+    });
+    expect(detectDbType('redis:7', {}, undefined)).toStrictEqual({ ok: true, dbType: 'redis' });
+  });
+
   it('uses the db_type label as the final chance before a skip', () => {
-    expect(detectDbType('redis:7', {}, 'redis')).toStrictEqual({ ok: true, dbType: 'redis' });
+    expect(detectDbType('clickhouse/clickhouse-server:24', {}, 'clickhouse')).toStrictEqual({
+      ok: true,
+      dbType: 'clickhouse',
+    });
   });
 
   it('skips with a reason when nothing matches', () => {
@@ -185,8 +196,15 @@ describe('envConfig', () => {
     });
   });
 
+  it('redis: REDIS_PASSWORD only, no username', () => {
+    expect(envConfig('redis', {})).toStrictEqual({ password: undefined });
+    expect(envConfig('redis', { REDIS_PASSWORD: 'secret' })).toStrictEqual({
+      password: 'secret',
+    });
+  });
+
   it('unknown db types get no env-derived config', () => {
-    expect(envConfig('redis', {})).toStrictEqual({});
+    expect(envConfig('clickhouse', {})).toStrictEqual({});
   });
 });
 
@@ -224,8 +242,15 @@ describe('mergedConfig', () => {
     });
   });
 
+  it('fills redis from defaults with an env password', () => {
+    expect(mergedConfig('redis', { REDIS_PASSWORD: 'p' }, {})).toStrictEqual({
+      ok: true,
+      config: { dbType: 'redis', port: 6379, username: '', password: 'p', database: null },
+    });
+  });
+
   it('fails when port is unavailable for an unlabeled exotic type', () => {
-    expect(mergedConfig('redis', {}, {})).toStrictEqual({
+    expect(mergedConfig('clickhouse', {}, {})).toStrictEqual({
       ok: false,
       reason:
         'connection config incomplete: port: Invalid input: expected number, received undefined',
@@ -253,6 +278,13 @@ describe('DEFAULT_CONFIG', () => {
       dbType: 'mysql',
       port: 3306,
       username: 'root',
+      password: '',
+      database: null,
+    });
+    expect(DEFAULT_CONFIG.get('redis')).toStrictEqual({
+      dbType: 'redis',
+      port: 6379,
+      username: '',
       password: '',
       database: null,
     });
@@ -381,7 +413,24 @@ describe('computeDesired', () => {
           snapshot({
             name: 'r',
             image: 'redis:7',
-            labels: { [LABEL]: 'true', [`${PREFIX}.db_type`]: 'redis', [`${PREFIX}.port`]: '6379' },
+            env: {},
+          }),
+        ],
+        { labelPrefix: PREFIX, sidecarNetworks: SIDECAR },
+      ).connections[0],
+    ).toMatchObject({ db_type: 'redis', port: 6379 });
+    expect(
+      computeDesired(
+        [
+          snapshot({
+            name: 'ch',
+            image: 'clickhouse/clickhouse-server:24',
+            env: {},
+            labels: {
+              [LABEL]: 'true',
+              [`${PREFIX}.db_type`]: 'clickhouse',
+              [`${PREFIX}.port`]: '8123',
+            },
           }),
         ],
         { labelPrefix: PREFIX, sidecarNetworks: SIDECAR },
@@ -389,18 +438,18 @@ describe('computeDesired', () => {
     ).toHaveLength(1);
   });
 
-  it('redis-style fully labeled configs pass through verbatim', () => {
+  it('fully labeled exotic configs pass through verbatim', () => {
     const desired = computeDesired(
       [
         snapshot({
-          name: 'cache',
-          image: 'redis:7',
+          name: 'olap',
+          image: 'clickhouse/clickhouse-server:24',
           env: {},
           labels: {
             [LABEL]: 'true',
-            [`${PREFIX}.db_type`]: 'redis',
-            [`${PREFIX}.name`]: 'Cache',
-            [`${PREFIX}.port`]: '6379',
+            [`${PREFIX}.db_type`]: 'clickhouse',
+            [`${PREFIX}.name`]: 'Olap',
+            [`${PREFIX}.port`]: '8123',
             [`${PREFIX}.username`]: '',
             [`${PREFIX}.password`]: '',
           },
@@ -410,9 +459,9 @@ describe('computeDesired', () => {
     );
     expect(desired.connections).toHaveLength(1);
     expect(desired.connections[0]).toMatchObject({
-      db_type: 'redis',
-      name: 'Cache',
-      port: 6379,
+      db_type: 'clickhouse',
+      name: 'Olap',
+      port: 8123,
       username: '',
       password: '',
     });
@@ -423,8 +472,9 @@ describe('computeDesired', () => {
       [
         snapshot({
           name: 'r',
-          image: 'redis:7',
-          labels: { [LABEL]: 'true', [`${PREFIX}.db_type`]: 'redis' },
+          image: 'clickhouse/clickhouse-server:24',
+          env: {},
+          labels: { [LABEL]: 'true', [`${PREFIX}.db_type`]: 'clickhouse' },
         }),
       ],
       { labelPrefix: PREFIX, sidecarNetworks: SIDECAR },
