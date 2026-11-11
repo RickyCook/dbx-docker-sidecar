@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 // Field defaults per official image documentation
 // (hub.docker.com/_/postgres, hub.docker.com/_/mysql, hub.docker.com/_/mariadb,
-// hub.docker.com/_/redis).
+// hub.docker.com/_/redis, hub.docker.com/r/valkey/valkey).
 // Every db type lists only what it can supply reliably; anything missing
 // falls through the merge chain (defaults → env → labels) to zod validation.
 export const DEFAULT_CONFIG: ReadonlyMap<string, DbTypeConfig> = new Map([
@@ -19,6 +19,7 @@ export const DEFAULT_CONFIG: ReadonlyMap<string, DbTypeConfig> = new Map([
   ['mysql', { dbType: 'mysql', port: 3306, username: 'root', password: '', database: null }],
   ['mariadb', { dbType: 'mysql', port: 3306, username: 'root', password: '', database: null }],
   ['redis', { dbType: 'redis', port: 6379, username: '', password: '', database: null }],
+  ['valkey', { dbType: 'redis', port: 6379, username: '', password: '', database: null }],
 ]);
 
 export const DbTypeConfigSchema = z.object({
@@ -114,6 +115,7 @@ const ENV_HINTS: readonly { readonly dbType: string; readonly prefixes: readonly
   { dbType: 'postgres', prefixes: ['POSTGRES_'] },
   { dbType: 'mariadb', prefixes: ['MARIADB_'] },
   { dbType: 'mysql', prefixes: ['MYSQL_'] },
+  { dbType: 'valkey', prefixes: ['VALKEY_'] },
   { dbType: 'redis', prefixes: ['REDIS_'] },
 ];
 
@@ -122,6 +124,7 @@ const IMAGE_HINTS: readonly { readonly dbType: string; readonly substrings: read
     { dbType: 'postgres', substrings: ['postgres'] },
     { dbType: 'mariadb', substrings: ['mariadb', 'maria'] },
     { dbType: 'mysql', substrings: ['mysql'] },
+    { dbType: 'valkey', substrings: ['valkey'] },
     { dbType: 'redis', substrings: ['redis'] },
   ];
 
@@ -224,6 +227,10 @@ export function envConfig(dbType: string, env: Readonly<Record<string, string>>)
       // The official image takes no credential env; REDIS_PASSWORD is the
       // bitnami/redis convention.
       return { password: firstEnv(env, ['REDIS_PASSWORD']) };
+    case 'valkey':
+      // Likewise: the official image takes no credential env; VALKEY_PASSWORD
+      // is the bitnami/valkey convention.
+      return { password: firstEnv(env, ['VALKEY_PASSWORD']) };
     default:
       return {};
   }

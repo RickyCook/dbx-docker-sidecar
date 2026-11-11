@@ -107,6 +107,17 @@ describe('detectDbType', () => {
     expect(detectDbType('redis:7', {}, undefined)).toStrictEqual({ ok: true, dbType: 'redis' });
   });
 
+  it('detects valkey from VALKEY_ env and image name', () => {
+    expect(detectDbType('bogus:latest', { VALKEY_PASSWORD: 'x' }, undefined)).toStrictEqual({
+      ok: true,
+      dbType: 'valkey',
+    });
+    expect(detectDbType('valkey/valkey:8', {}, undefined)).toStrictEqual({
+      ok: true,
+      dbType: 'valkey',
+    });
+  });
+
   it('uses the db_type label as the final chance before a skip', () => {
     expect(detectDbType('clickhouse/clickhouse-server:24', {}, 'clickhouse')).toStrictEqual({
       ok: true,
@@ -203,6 +214,13 @@ describe('envConfig', () => {
     });
   });
 
+  it('valkey: VALKEY_PASSWORD only, no username', () => {
+    expect(envConfig('valkey', {})).toStrictEqual({ password: undefined });
+    expect(envConfig('valkey', { VALKEY_PASSWORD: 'secret' })).toStrictEqual({
+      password: 'secret',
+    });
+  });
+
   it('unknown db types get no env-derived config', () => {
     expect(envConfig('clickhouse', {})).toStrictEqual({});
   });
@@ -249,6 +267,13 @@ describe('mergedConfig', () => {
     });
   });
 
+  it('maps valkey onto the redis dbx type', () => {
+    expect(mergedConfig('valkey', { VALKEY_PASSWORD: 'p' }, {})).toStrictEqual({
+      ok: true,
+      config: { dbType: 'redis', port: 6379, username: '', password: 'p', database: null },
+    });
+  });
+
   it('fails when port is unavailable for an unlabeled exotic type', () => {
     expect(mergedConfig('clickhouse', {}, {})).toStrictEqual({
       ok: false,
@@ -282,6 +307,13 @@ describe('DEFAULT_CONFIG', () => {
       database: null,
     });
     expect(DEFAULT_CONFIG.get('redis')).toStrictEqual({
+      dbType: 'redis',
+      port: 6379,
+      username: '',
+      password: '',
+      database: null,
+    });
+    expect(DEFAULT_CONFIG.get('valkey')).toStrictEqual({
       dbType: 'redis',
       port: 6379,
       username: '',
