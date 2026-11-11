@@ -232,6 +232,8 @@ describe('mergedConfig', () => {
       ok: true,
       config: {
         dbType: 'postgres',
+        driverProfile: null,
+        driverLabel: null,
         port: 5432,
         username: 'postgres',
         password: '',
@@ -248,6 +250,8 @@ describe('mergedConfig', () => {
       ok: true,
       config: {
         dbType: 'postgres',
+        driverProfile: null,
+        driverLabel: null,
         port: 6543,
         username: 'label-user',
         password: '',
@@ -256,21 +260,45 @@ describe('mergedConfig', () => {
     });
     expect(mergedConfig('mariadb', {}, {})).toStrictEqual({
       ok: true,
-      config: { dbType: 'mysql', port: 3306, username: 'root', password: '', database: null },
+      config: {
+        dbType: 'mysql',
+        driverProfile: 'mariadb',
+        driverLabel: 'MariaDB',
+        port: 3306,
+        username: 'root',
+        password: '',
+        database: null,
+      },
     });
   });
 
   it('fills redis from defaults with an env password', () => {
     expect(mergedConfig('redis', { REDIS_PASSWORD: 'p' }, {})).toStrictEqual({
       ok: true,
-      config: { dbType: 'redis', port: 6379, username: '', password: 'p', database: null },
+      config: {
+        dbType: 'redis',
+        driverProfile: null,
+        driverLabel: null,
+        port: 6379,
+        username: '',
+        password: 'p',
+        database: null,
+      },
     });
   });
 
   it('maps valkey onto the redis dbx type', () => {
     expect(mergedConfig('valkey', { VALKEY_PASSWORD: 'p' }, {})).toStrictEqual({
       ok: true,
-      config: { dbType: 'redis', port: 6379, username: '', password: 'p', database: null },
+      config: {
+        dbType: 'redis',
+        driverProfile: null,
+        driverLabel: null,
+        port: 6379,
+        username: '',
+        password: 'p',
+        database: null,
+      },
     });
   });
 
@@ -301,6 +329,8 @@ describe('DEFAULT_CONFIG', () => {
     });
     expect(DEFAULT_CONFIG.get('mariadb')).toStrictEqual({
       dbType: 'mysql',
+      driverProfile: 'mariadb',
+      driverLabel: 'MariaDB',
       port: 3306,
       username: 'root',
       password: '',
@@ -361,6 +391,8 @@ describe('computeDesired', () => {
         id: connectionId('pg-a'),
         name: 'pg-a',
         db_type: 'postgres',
+        driver_profile: null,
+        driver_label: null,
         host: '10.0.0.9',
         port: 5432,
         username: 'postgres',
@@ -468,6 +500,31 @@ describe('computeDesired', () => {
         { labelPrefix: PREFIX, sidecarNetworks: SIDECAR },
       ).connections,
     ).toHaveLength(1);
+  });
+
+  it('registers mariadb as mysql with the MariaDB profile and label', () => {
+    const desired = computeDesired(
+      [snapshot({ name: 'm', image: 'mariadb:11', env: { MARIADB_ROOT_PASSWORD: 'x' } })],
+      { labelPrefix: PREFIX, sidecarNetworks: SIDECAR },
+    );
+    expect(desired.connections[0]).toMatchObject({
+      db_type: 'mysql',
+      driver_profile: 'mariadb',
+      driver_label: 'MariaDB',
+    });
+  });
+
+  it('registers valkey as plain redis', () => {
+    const desired = computeDesired([snapshot({ name: 'v', image: 'valkey/valkey:8', env: {} })], {
+      labelPrefix: PREFIX,
+      sidecarNetworks: SIDECAR,
+    });
+    expect(desired.connections[0]).toMatchObject({
+      db_type: 'redis',
+      driver_profile: null,
+      driver_label: null,
+      port: 6379,
+    });
   });
 
   it('fully labeled exotic configs pass through verbatim', () => {
@@ -653,6 +710,36 @@ describe('diffState', () => {
       { action: 'connect', network: 'default' },
       { action: 'connect', network: 'newnet' },
     ]);
+  });
+
+  it('a profile-less mariadb connection is updated to carry the profile', () => {
+    const mariadb = computeDesired(
+      [snapshot({ name: 'm', image: 'mariadb:11', env: { MARIADB_ROOT_PASSWORD: 'x' } })],
+      { labelPrefix: PREFIX, sidecarNetworks: SIDECAR },
+    );
+    const state = diffState(mariadb, {
+      connections: mariadb.connections.map((c) => ({
+        ...c,
+        driver_profile: null,
+        driver_label: null,
+      })),
+      dbNetworks: mariadb.attachments,
+      sidecarNetworks: SIDECAR,
+    });
+    expect(state.connectionChanges).toHaveLength(1);
+    expect(state.connectionChanges[0]).toMatchObject({
+      action: 'update',
+      connection: { driver_profile: 'mariadb', driver_label: 'MariaDB' },
+    });
+  });
+
+  it('a missing profile field equals a null one (no update)', () => {
+    const state = diffState(desired(), {
+      connections: desired().connections.map(({ driver_profile, driver_label, ...c }) => c),
+      dbNetworks: desired().attachments,
+      sidecarNetworks: SIDECAR,
+    });
+    expect(state.connectionChanges).toStrictEqual([]);
   });
 
   it('save_password drift alone does not cause an update', () => {

@@ -98,7 +98,8 @@ containers.
 ## Credential mapping
 
 Defaults per official image docs; merge order **type defaults ← container env ← label
-overrides**. MariaDB checks `MARIADB_*` before `MYSQL_*` fallbacks. Valkey has no dbx type of its own
+overrides**. MariaDB checks `MARIADB_*` before `MYSQL_*` fallbacks and registers as dbx `mysql` with the
+MariaDB profile, matching what the dbx UI's MariaDB option saves. Valkey has no dbx type of its own
 and registers as dbx `redis`.
 
 | db      | port  | username                            | password                                 | database                                     |

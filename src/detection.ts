@@ -17,13 +17,28 @@ export const DEFAULT_CONFIG: ReadonlyMap<string, DbTypeConfig> = new Map([
     },
   ],
   ['mysql', { dbType: 'mysql', port: 3306, username: 'root', password: '', database: null }],
-  ['mariadb', { dbType: 'mysql', port: 3306, username: 'root', password: '', database: null }],
+  [
+    'mariadb',
+    {
+      dbType: 'mysql',
+      // dbx has no mariadb type; its UI's MariaDB option is this profile on
+      // mysql (plugins/connection-types/profiles/catalog.yaml).
+      driverProfile: 'mariadb',
+      driverLabel: 'MariaDB',
+      port: 3306,
+      username: 'root',
+      password: '',
+      database: null,
+    },
+  ],
   ['redis', { dbType: 'redis', port: 6379, username: '', password: '', database: null }],
   ['valkey', { dbType: 'redis', port: 6379, username: '', password: '', database: null }],
 ]);
 
 export const DbTypeConfigSchema = z.object({
   dbType: z.string().min(1),
+  driverProfile: z.string().optional(),
+  driverLabel: z.string().optional(),
   // Required: no default can be invented for an arbitrary image.
   port: z.number().int().positive(),
   username: z.string(),
@@ -37,6 +52,8 @@ export type DbTypeConfig = z.infer<typeof DbTypeConfigSchema>;
 // password carry no default requirement, database may be null.
 export const MergedConfigSchema = z.object({
   dbType: z.string().min(1),
+  driverProfile: z.string().nullable().default(null),
+  driverLabel: z.string().nullable().default(null),
   port: z.number().int().positive(),
   username: z.string().default(''),
   password: z.string().default(''),
@@ -260,6 +277,8 @@ export function mergedConfig(
   const envDerived = envConfig(dbType, env);
   const parsed = MergedConfigSchema.safeParse({
     dbType: typeDefault?.dbType ?? dbType,
+    driverProfile: typeDefault?.driverProfile,
+    driverLabel: typeDefault?.driverLabel,
     port: firstOf(overrides.port, typeDefault?.port),
     username: firstOf(overrides.username, envDerived.username, typeDefault?.username),
     password: firstOf(overrides.password, envDerived.password, typeDefault?.password),

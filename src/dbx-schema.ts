@@ -8,6 +8,10 @@ export const DbxConnectionSchema = z.looseObject({
   id: z.string().min(1),
   name: z.string(),
   db_type: z.string().min(1),
+  // Optional UI profile over db_type (e.g. MariaDB is mysql + "mariadb"):
+  // dbx picks the icon from driver_profile and the label from driver_label.
+  driver_profile: z.string().nullish(),
+  driver_label: z.string().nullish(),
   host: z.string(),
   port: z.number().int(),
   username: z.string(),

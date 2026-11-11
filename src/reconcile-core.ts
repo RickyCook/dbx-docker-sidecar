@@ -71,6 +71,8 @@ function buildConnection(
     id: connectionId(snapshot.name),
     name: overrides.name ?? snapshot.name,
     db_type: config.dbType,
+    driver_profile: config.driverProfile,
+    driver_label: config.driverLabel,
     host: overrides.host ?? firstIp(snapshot, network) ?? `${hostnameOf(snapshot)}.${network}`,
     port: config.port,
     username: config.username,
@@ -147,6 +149,8 @@ function sameConnection(a: DbxConnection, b: DbxConnection): boolean {
     a.id === b.id &&
     a.name === b.name &&
     a.db_type === b.db_type &&
+    (a.driver_profile ?? null) === (b.driver_profile ?? null) &&
+    (a.driver_label ?? null) === (b.driver_label ?? null) &&
     a.host === b.host &&
     a.port === b.port &&
     a.username === b.username &&
