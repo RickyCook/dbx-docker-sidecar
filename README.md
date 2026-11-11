@@ -34,8 +34,8 @@ project's compose file, and set `DBX_SIDECAR_IMAGE` (or replace the sidecar's
 DBX_PASSWORD=… docker compose --profile demo up -d
 ```
 
-Adds postgres, mysql, mariadb, and redis with realistic env vars. After a few seconds the
-dbx UI shows four saved connections with the right engine/creds; the demo `down` removes them
+Adds postgres, mysql, mariadb, redis, and valkey with realistic env vars. After a few
+seconds the dbx UI shows five saved connections with the right engine/creds; the demo `down` removes them
 again. Default profile (no `demo`) starts only dbx + sidecar.
 
 ### Pinning / upgrading
@@ -90,15 +90,16 @@ change it via the `LABEL_PREFIX` env var.
 
 ## db-type detection
 
-Cascade, first hit wins: **env vars** (`POSTGRES_*`, `MARIADB_*`, `MYSQL_*`, `REDIS_*`) →
-**image name substring** (`postgres`, `mariadb`, `mysql`, `redis`) → **`.db_type` label**.
+Cascade, first hit wins: **env vars** (`POSTGRES_*`, `MARIADB_*`, `MYSQL_*`, `VALKEY_*`,
+`REDIS_*`) → **image name substring** (`postgres`, `mariadb`, `mysql`, `valkey`, `redis`) → **`.db_type` label**.
 No hit ⇒ the labeled container is skipped with a warning and never blocks other
 containers.
 
 ## Credential mapping
 
 Defaults per official image docs; merge order **type defaults ← container env ← label
-overrides**. MariaDB checks `MARIADB_*` before `MYSQL_*` fallbacks.
+overrides**. MariaDB checks `MARIADB_*` before `MYSQL_*` fallbacks. Valkey has no dbx type of its own
+and registers as dbx `redis`.
 
 | db      | port  | username                            | password                                 | database                                     |
 | ------- | ----- | ----------------------------------- | ---------------------------------------- | -------------------------------------------- |
@@ -106,6 +107,7 @@ overrides**. MariaDB checks `MARIADB_*` before `MYSQL_*` fallbacks.
 | mysql   | 3306  | `MYSQL_ROOT_PASSWORD` ⇒ root; else `MYSQL_USER` | root pw or `MYSQL_PASSWORD`  | `MYSQL_DATABASE` or null                     |
 | mariadb | 3306  | `MARIADB_ROOT_PASSWORD` ⇒ root; else `MARIADB_USER`(→`MYSQL_USER`) | same with `MARIADB_*` first | `MARIADB_DATABASE`→`MYSQL_DATABASE` or null |
 | redis   | 6379  | `""`                                | `REDIS_PASSWORD` (bitnami) → `""`        | null                                         |
+| valkey  | 6379  | `""`                                | `VALKEY_PASSWORD` (bitnami) → `""`       | null                                         |
 
 If the merged result still lacks a port (true for any unknown engine) the container is
 skipped unless something (label) supplies it. Unknown engines work **label-only**: e.g.
